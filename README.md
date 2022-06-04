@@ -1,6 +1,6 @@
 # FullScreen Composable
 
-Since we don't have (at least until now Juny/2022) a dedicated fullscreen composable function in the standard
+Since we don't have (at least until now June/2022) a dedicated fullscreen composable function in the standard
 JetpackCompose library, I tried to build this one that acts as one.
 
 This idea works by creating a composable that "draws" on top of the root application composables. Doing this, we can
