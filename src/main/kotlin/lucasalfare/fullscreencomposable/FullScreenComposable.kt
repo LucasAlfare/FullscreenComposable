@@ -1,91 +1,141 @@
 package lucasalfare.fullscreencomposable
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
 
 /**
- * Holds the application window dimensions.
+ * Enum class representing the only two different states that a full screen composable can have.
  */
-private val LocalAppSize = compositionLocalOf { AppSize() }
+enum class FullScreenState {
+  /**
+   * Indicates that the full screen composable is being shown.
+   */
+  Active,
+
+  /**
+   * Indicates that the full screen composable is not being shown.
+   */
+  Inactive
+}
 
 /**
- * Holds all composables that aims to be drawn in front of the
- * application.
- *
- * Order matters?
+ * Data class to hold the current [FullScreenHandleableApplication] hierarchy
+ * full screen state.
  */
-val LocalOnTopComposables = compositionLocalOf { OnTopComposables() }
-
-private data class AppSize(var size: IntSize = IntSize.Zero)
-
-data class OnTopComposables(
-  var composables: MutableList<@Composable () -> Unit> = mutableListOf()
+data class MutableFullScreenState(
+  var state: MutableState<FullScreenState> = mutableStateOf(FullScreenState.Inactive)
 )
 
 /**
- * This composable works as root entry point to all applications that
- * aims to present [FullScreen] composables.
+ * Data class to hold the current [FullScreenHandleableApplication]
+ * full screen composable view.
+ */
+data class FullScreenComposableRef(
+  var composableReference: @Composable () -> Unit = {}
+)
+
+/**
+ * Exposes a data value representing the full screen state inside the [FullScreenHandleableApplication]
+ * hierarchy.
+ */
+val LocalMutableFullScreenState = compositionLocalOf { MutableFullScreenState() }
+
+/**
+ * Exposes a data value representing the target composable that should be treated as
+ * full screen inside the [FullScreenHandleableApplication]
+ * hierarchy.
+ */
+val LocalFullScreenComposableReference = compositionLocalOf { FullScreenComposableRef() }
+
+/**
+ * Use this composable when working in an application that will launch something fullscreen. This must wrap the [applicationContent] in order to make it work.
  *
- * Also, is important to known that "full screen" here should be considered
- * "occupying entire screen of the application", for example, occupying
- * the entire window of a desktop frame (without considering status bar).
+ * @param [applicationContent] The main application content.
  */
 @Composable
-fun FullScreenHandleableApp(applicationContent: @Composable () -> Unit) {
-  var rootSize by remember { mutableStateOf(AppSize()) }
+fun FullScreenHandleableApplication(
+  applicationContent: @Composable () -> Unit
+) {
+  val mutableFullScreenState = MutableFullScreenState()
+  val fullScreenComposableReference = FullScreenComposableRef()
 
-  Box(
-    modifier = Modifier
-      .onGloballyPositioned {
-        rootSize = AppSize(it.size)
-      }
+  CompositionLocalProvider(
+    LocalMutableFullScreenState provides mutableFullScreenState,
+    LocalFullScreenComposableReference provides fullScreenComposableReference
   ) {
-    CompositionLocalProvider(
-      LocalOnTopComposables provides OnTopComposables(),
-      LocalAppSize provides rootSize
+    Box(
+      modifier = Modifier
+        .fillMaxSize()
     ) {
+      // always draws the main application content
       applicationContent()
 
-      /*
-        invokes the pre-added composables
-        over the application tree
-       */
-      Box(modifier = Modifier.fillMaxSize()) {
-        LocalOnTopComposables.current.composables.forEach {
-          it()
-        }
+      // decides if we must draw the full screen content
+      if (mutableFullScreenState.state.value == FullScreenState.Active) {
+        fullScreenComposableReference.composableReference()
       }
     }
   }
 }
 
 /**
- * Composable that can be used to show its [content] over all screen root space.
+ * This is a pre-made composable used to show full screen content.
+ *
+ * Notice that full screen content here is defined as occupying entire
+ * application window only, not entire device screen/window (mobile/desktop).
+ *
+ * This composable is composed by two main containers:
+ * - an outer box that is set to max size;
+ * - an inner box that is the main content wrapper.
+ *
+ * This is the preferred composable that should be used to full screen,
+ * in order it already implements the properly [interactionSource] to outer and
+ * inner boxes.
+ *
+ * This composable can be also used to build simple Dialogs, since outer box
+ * can have alpha color to indicate inactive background, and it is also clickable,
+ * making the [FullScreen] composable easy to dismiss.
+ *
+ * @param innerBoxSizeFraction The size fraction that will be applied to the inner box. Valid range to this value is `0f` to `1f`.
+ * @param fullScreenContent The content of the [FullScreen].
  */
 @Composable
 fun FullScreen(
-  show: Boolean,
-  rootModifier: Modifier = Modifier,
-  content: @Composable BoxScope.() -> Unit
+  outerBoxBackground: Color = Color.Gray.copy(alpha = 0.5f),
+  innerBoxSizeFraction: Float = 1f,
+  fullScreenContent: @Composable BoxScope.() -> Unit // TODO: is extension to `BoxScope` needed?
 ) {
-  if (show) {
-    //the full-screen outer box
+  val interactionSource = remember { MutableInteractionSource() }
+  val fullScreenState = LocalMutableFullScreenState.current
+
+  // outer box; this can perform full screen state handling
+  Box(
+    modifier = Modifier
+      .background(outerBoxBackground)
+      .fillMaxSize()
+      .clickable {
+        fullScreenState.state.value = FullScreenState.Inactive
+      }
+  ) {
+    // inner box; this can not perform full screen state handling
     Box(
       modifier = Modifier
-        .size(
-          width = LocalAppSize.current.size.width.dp,
-          height = LocalAppSize.current.size.height.dp
-        )
-        .then(rootModifier)
+        .fillMaxSize(innerBoxSizeFraction)
+        .align(Alignment.Center)
+        .clickable(
+          interactionSource = interactionSource,
+          indication = null
+        ) { /* pass */ }
     ) {
-      content()
+      fullScreenContent()
     }
   }
 }
